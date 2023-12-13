@@ -61,6 +61,15 @@ interface QueryExecuteResponse {
   timing?: number;
 }
 
+function typeIdToLabel(id: number){
+	switch(id){
+		case 245:
+			return "JSON";
+		default:
+			return id
+	}
+}
+
 export async function executeQuery(
   req: Request,
   res: Response<QueryExecuteResponse>,
@@ -81,7 +90,7 @@ export async function executeQuery(
     const result: QueryResult = {
       fields: fields?.map((field) => ({
         name: field.name,
-        type: `${field.type}`,
+        type: `${typeIdToLabel(field.type)}`,
         table: field.table,
         database: field.db,
         orgTable: field.orgTable,
@@ -103,7 +112,11 @@ export async function executeQuery(
             let rawValue = "";
 
             for (const field of result.fields as Field[]) {
-              const fieldValue = singleRow[field.name];
+              let fieldValue = singleRow[field.name];
+							// if fieldValue is array or object, then stringify it
+							if (typeof fieldValue === "object" && fieldValue !== null) {
+								fieldValue = JSON.stringify(fieldValue);
+							}
 
               if (typeof field !== "undefined") {
                 if (field === null) {
@@ -131,7 +144,10 @@ export async function executeQuery(
           let rawValue = "";
 
           for (const field of result.fields as Field[]) {
-            const fieldValue = (row as RowDataPacket)[field.name];
+            let fieldValue = (row as RowDataPacket)[field.name];
+						if (typeof fieldValue === "object" && fieldValue !== null) {
+							fieldValue = JSON.stringify(fieldValue);
+						}
 
             if (typeof field !== "undefined") {
               if (field === null) {
