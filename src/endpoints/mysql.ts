@@ -16,6 +16,7 @@ const pool = createPool({
   user: connectionUrl.username,
   password: connectionUrl.password,
   database: connectionUrl.pathname.slice(1),
+	nestTables: true,
 });
 
 const connections = new Map<string, PoolConnection>();
@@ -24,7 +25,7 @@ const connectionTimeouts = new Map<string, NodeJS.Timer>();
 export interface Field {
   name: string;
   type: string;
-  table?: string;
+  table: string;
 
   // Only populated for included fields
   database?: string | null;
@@ -66,8 +67,22 @@ function typeIdToLabel(id: number){
 		case 245:
 			return "JSON";
 		default:
-			return id
+			return `${id}`
 	}
+}
+
+function getFieldValue(singleRow: RowDataPacket, field: Field){
+	let fieldValue = singleRow[field.table][field.name];
+	if (typeof fieldValue === "object" && fieldValue !== null) {
+		fieldValue = JSON.stringify(fieldValue);
+	}
+	if (field === null) {
+		return [fieldValue, "0"]
+	}
+	else if (fieldValue === null){
+		return [null, "-1"]
+	}
+	return [fieldValue, `${fieldValue}`.length]
 }
 
 export async function executeQuery(
@@ -87,10 +102,11 @@ export async function executeQuery(
       ? (connections.get(session) as PoolConnection)
       : await pool.getConnection();
     const [rows, fields] = await connection.query(query);
+
     const result: QueryResult = {
       fields: fields?.map((field) => ({
         name: field.name,
-        type: `${typeIdToLabel(field.type)}`,
+        type: typeIdToLabel(field.type),
         table: field.table,
         database: field.db,
         orgTable: field.orgTable,
@@ -103,74 +119,29 @@ export async function executeQuery(
     };
 
     if (Array.isArray(rows)) {
-      for (const row of rows) {
+			rows.map((row) => {
         result.rows = result.rows || [];
-
-        if (Array.isArray(row)) {
-          for (const singleRow of row) {
-            const lengths: string[] = [];
-            let rawValue = "";
-
-            for (const field of result.fields as Field[]) {
-              let fieldValue = singleRow[field.name];
-							// if fieldValue is array or object, then stringify it
-							if (typeof fieldValue === "object" && fieldValue !== null) {
-								fieldValue = JSON.stringify(fieldValue);
-							}
-
-              if (typeof field !== "undefined") {
-                if (field === null) {
-                  lengths.push("0");
-                }
-								else if (fieldValue === null){
-                  lengths.push("-1");
-								}
-								else {
-                  const value = `${fieldValue}`;
-
-                  lengths.push(`${value.length}`);
-                  rawValue += value;
-                }
-              }
-            }
-
-            result.rows?.push({
-              lengths,
-              values: btoa(rawValue),
-            });
-          }
-        } else if (typeof row.procotol41 === "undefined") {
-          const lengths: string[] = [];
-          let rawValue = "";
-
-          for (const field of result.fields as Field[]) {
-            let fieldValue = (row as RowDataPacket)[field.name];
-						if (typeof fieldValue === "object" && fieldValue !== null) {
-							fieldValue = JSON.stringify(fieldValue);
-						}
-
-            if (typeof field !== "undefined") {
-              if (field === null) {
-                lengths.push("0");
-              } 
-							else if (fieldValue === null){
-                lengths.push("-1");
-							}
-							else {
-                const value = `${fieldValue}`;
-
-                lengths.push(`${value.length}`);
-                rawValue += value;
-              }
-            }
-          }
-
-          result.rows?.push({
-            lengths,
-            values: btoa(rawValue),
-          });
-        }
-      }
+				const lengths: string[] = [];
+				let rawValue = "";
+				for (const field  of result.fields as Field[]) {
+					if (typeof field === "undefined") continue;
+					if (Array.isArray(row)){
+						row.map((singleRow) =>{
+							const [value, length] = getFieldValue(singleRow, field);
+							lengths.push(length);
+							rawValue += value;
+						})
+					} else if (typeof row.procotol41 === "undefined") {
+						const [value, length] = getFieldValue(row as RowDataPacket, field);
+						lengths.push(length);
+						rawValue += value;
+					}
+				}
+				result.rows?.push({
+					lengths,
+					values: Buffer.from(rawValue).toString("base64"),
+				});
+			});
     } else {
       result.rowsAffected = `${rows.affectedRows}`;
       result.insertId = `${rows.insertId}`;
