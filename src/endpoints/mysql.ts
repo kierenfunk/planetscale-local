@@ -73,14 +73,15 @@ function typeIdToLabel(id: number){
 
 function getFieldValue(singleRow: RowDataPacket, field: Field){
 	let fieldValue = singleRow[field.table][field.name];
+  console.log(fieldValue, field.table, field.name);
 	if (typeof fieldValue === "object" && fieldValue !== null) {
 		fieldValue = JSON.stringify(fieldValue);
 	}
 	if (field === null) {
-		return [fieldValue, "0"]
+		return [fieldValue, 0]
 	}
-	else if (fieldValue === null){
-		return [null, "-1"]
+	else if (fieldValue === null || fieldValue === 'null'){
+		return ["", -1]
 	}
 	return [fieldValue, `${fieldValue}`.length]
 }
